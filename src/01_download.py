@@ -116,7 +116,8 @@ def main():
     print(poi["category"].value_counts().to_string())
 
     # Быстрая карта: граница, буфер, улицы, точки
-    fmap = folium.Map(location=[55.755, 37.62], zoom_start=13, tiles="cartodbpositron")
+    # Подложка OpenStreetMap: бесплатная и без ключа (CartoDB теперь просит ключ)
+    fmap = folium.Map(location=[55.755, 37.62], zoom_start=13, tiles="OpenStreetMap")
     folium.GeoJson(cao_buffer, name="ЦАО + буфер", style_function=lambda x: {"color": "gray", "fill": False}).add_to(fmap)
     folium.GeoJson(cao, name="ЦАО", style_function=lambda x: {"color": "red", "fill": False}).add_to(fmap)
     folium.GeoJson(edges[["geometry"]], name="улицы", style_function=lambda x: {"color": "blue", "weight": 1}).add_to(fmap)
