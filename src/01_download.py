@@ -77,7 +77,10 @@ def download_poi(polygon):
     parts = []
     for category, tags in cfg["poi"].items():
         print(f"Качаю точки: {category}")
-        found = ox.features_from_polygon(polygon, tags=tags).reset_index()
+        # Спрашиваем сервер по прямоугольнику (4 угла) - такой запрос он
+        # обрабатывает быстро. Лишнее за пределами буфера отрезаем сами ниже.
+        found = ox.features_from_bbox(polygon.bounds, tags=tags).reset_index()
+        found = found[found.intersects(polygon)]
         # Станции с train=yes считаем вокзалами, а не метро
         if category == "metro_mcd" and "train" in found.columns:
             found = found[found["train"] != "yes"]
