@@ -29,6 +29,10 @@ with open(ROOT / "config" / "download.yaml", encoding="utf-8") as f:
 ox.settings.cache_folder = str(RAW / "osmnx_cache")
 ox.settings.use_cache = True
 ox.settings.useful_tags_way = cfg["useful_tags"]
+# Какой сервер Overpass использовать и сколько ждать ответа (меняется в конфиге)
+ox.settings.overpass_url = cfg["overpass_url"]
+ox.settings.requests_timeout = cfg["overpass_timeout_s"]
+print(f"Сервер Overpass: {cfg['overpass_url']}")
 
 
 def get_boundary():
