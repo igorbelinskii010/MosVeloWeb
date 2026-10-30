@@ -32,6 +32,8 @@ ox.settings.useful_tags_way = cfg["useful_tags"]
 # Какой сервер Overpass использовать и сколько ждать ответа (меняется в конфиге)
 ox.settings.overpass_url = cfg["overpass_url"]
 ox.settings.requests_timeout = cfg["overpass_timeout_s"]
+# Печатать в консоль, что делает OSMnx (видно, если сервер тормозит или просит подождать)
+ox.settings.log_console = True
 print(f"Сервер Overpass: {cfg['overpass_url']}")
 
 
