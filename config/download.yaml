@@ -10,6 +10,10 @@ metric_crs: "EPSG:32637" # UTM 37N, для длин и площадей
 #   https://overpass.private.coffee/api         - зеркало (Австрия)
 overpass_url: "https://overpass-api.de/api"
 overpass_timeout_s: 300  # сколько секунд ждать ответа сервера
+# Спрашивать ли у сервера «можно ли уже слать запрос» перед каждым запросом.
+# У зеркала maps.mail.ru такой страницы нет, и OSMnx тогда ждёт 60 с впустую,
+# поэтому для него ставим false. Для overpass-api.de лучше true.
+overpass_rate_limit: false
 # Типы дорог, которые не скачиваем вообще
 exclude_highway: [motorway, motorway_link, steps, construction, proposed, platform, corridor, elevator]
 # Какие теги OSM сохраняем у участков улиц
