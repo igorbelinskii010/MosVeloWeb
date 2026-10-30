@@ -1,0 +1,41 @@
+# Настройки шага 1 (скачивание данных). Меняем здесь, а не в коде.
+place_query: "Центральный административный округ, Москва, Россия"
+buffer_m: 300            # запас вокруг ЦАО, чтобы не терять связи на краю округа
+expected_area_km2: [55, 80]   # проверка: площадь ЦАО должна быть около 66 км²
+metric_crs: "EPSG:32637" # UTM 37N, для длин и площадей
+# Типы дорог, которые не скачиваем вообще
+exclude_highway: [motorway, motorway_link, steps, construction, proposed, platform, corridor, elevator]
+# Какие теги OSM сохраняем у участков улиц
+useful_tags:
+  - highway
+  - name
+  - maxspeed
+  - lanes
+  - oneway
+  - oneway:bicycle
+  - cycleway
+  - cycleway:left
+  - cycleway:right
+  - cycleway:both
+  - bicycle
+  - footway
+  - segregated
+  - sidewalk
+  - access
+  - surface
+  - tunnel
+  - bridge
+# Точки притяжения: категория -> теги OSM (подходит любой из них)
+poi:
+  metro_mcd:
+    railway: [station]
+    station: [subway]
+    public_transport: [station]
+  train_station:
+    building: [train_station]
+  university:
+    amenity: [university, college]
+  office:
+    office: true
+  park:
+    leisure: [park]
