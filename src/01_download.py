@@ -48,7 +48,9 @@ def get_boundary():
     if not low <= area_km2 <= high:
         raise SystemExit(f"Площадь вне диапазона {low}-{high} км2: нашлось не то. Проверь place_query.")
     buffered = metric.copy()
-    buffered["geometry"] = metric.geometry.buffer(cfg["buffer_m"])
+    # Буфер + упрощение контура: у границы ЦАО тысячи точек, а длинный контур
+    # делает запрос к Overpass огромным и сервер не успевает его обработать
+    buffered["geometry"] = metric.geometry.buffer(cfg["buffer_m"]).simplify(cfg["simplify_m"])
     return gdf[["geometry"]].reset_index(drop=True), buffered[["geometry"]].to_crs(4326).reset_index(drop=True)
 
 
