@@ -8,7 +8,7 @@ metric_crs: "EPSG:32637" # UTM 37N, для длин и площадей
 #   https://overpass-api.de/api                 - основной (Германия)
 #   https://maps.mail.ru/osm/tools/overpass/api - зеркало VK (Россия)
 #   https://overpass.private.coffee/api         - зеркало (Австрия)
-overpass_url: "https://overpass-api.de/api"
+overpass_url: "https://maps.mail.ru/osm/tools/overpass/api"
 overpass_timeout_s: 300  # сколько секунд ждать ответа сервера
 # Спрашивать ли у сервера «можно ли уже слать запрос» перед каждым запросом.
 # У зеркала maps.mail.ru такой страницы нет, и OSMnx тогда ждёт 60 с впустую,
