@@ -6,3 +6,5 @@ data/processed/*.graphml
 # карта для проверки весит ~65 МБ, её всегда можно пересоздать скриптом
 outputs/maps/download_check.html
 data/processed/graph_raw.graphml
+# результаты скриптов (gpkg) пересоздаются запуском src/0*.py, в git не храним (решение автора 31.10.2026)
+data/processed/*.gpkg
