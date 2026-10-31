@@ -253,6 +253,8 @@ def main():
     folium.LayerControl(collapsed=False).add_to(fmap)
 
     out = MAPS / "lts_check.html"
+    print("Сохраняю карту (файл ~50 МБ, 1-3 минуты, в консоли ничего не меняется - не прерывай)...",
+          flush=True)
     fmap.save(out)
 
     # Короткая сводка в консоль
