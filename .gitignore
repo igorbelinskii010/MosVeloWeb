@@ -5,3 +5,4 @@ __pycache__/
 data/processed/*.graphml
 # карта для проверки весит ~65 МБ, её всегда можно пересоздать скриптом
 outputs/maps/download_check.html
+data/processed/graph_raw.graphml

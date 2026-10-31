@@ -9,7 +9,8 @@ metric_crs: "EPSG:32637" # UTM 37N, для длин и площадей
 #   https://overpass-api.de/api                 - основной (Германия)
 #   https://maps.mail.ru/osm/tools/overpass/api - зеркало VK (Россия)
 #   https://overpass.private.coffee/api         - зеркало (Австрия)
-overpass_url: "https://maps.mail.ru/osm/tools/overpass/api"
+# 31.10.2026: сработал overpass.kumi.systems (overpass-api.de - 502, private.coffee - 504 и обрыв)
+overpass_url: "https://overpass.kumi.systems/api"
 overpass_timeout_s: 300  # сколько секунд ждать ответа сервера
 # Спрашивать ли у сервера «можно ли уже слать запрос» перед каждым запросом.
 # У зеркала maps.mail.ru такой страницы нет, и OSMnx тогда ждёт 60 с впустую,
@@ -37,6 +38,18 @@ useful_tags:
   - surface
   - tunnel
   - bridge
+  # добавлено для метода v0.2 (31.10.2026):
+  - service                      # тип проезда: parking_aisle, driveway и т. п.
+  - cycleway:separation          # физическая защита велополосы (столбики, бордюр)
+  - cycleway:left:separation
+  - cycleway:right:separation
+  - cycleway:both:separation
+  # ширина (31.10.2026): чтобы посчитать, у скольких тротуаров она указана
+  - width
+  - sidewalk:width
+  - sidewalk:left:width
+  - sidewalk:right:width
+  - sidewalk:both:width
 # Точки притяжения: категория -> теги OSM (подходит любой из них)
 poi:
   metro_mcd:

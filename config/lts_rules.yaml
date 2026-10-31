@@ -1,0 +1,123 @@
+# Правила оценки улиц ЦАО (версия 0.2, согласована 31.10.2026). Меняем здесь, а не в коде.
+# Обоснование каждого правила: Claude Doc «MVW: пересмотр метода LTS (v0.2)».
+# Шаг 2 использует разделы до «Уровни LTS», шаг 3 - раздел «Уровни LTS».
+version: "0.2"
+
+# ---------- Что исключаем из сети (шаг 2) ----------
+# Типы дорог, которые не берём (на шаге 1 они уже не скачиваются, это страховка)
+exclude_highway: [motorway, motorway_link, steps, construction, proposed, platform, corridor, elevator]
+# Если у участка bicycle=no - велосипедам нельзя. Значения bicycle, которые считаем запретом:
+exclude_bicycle: ["no"]
+# Значения bicycle, которые "отменяют" запреты на доступ и тротуар
+allow_bicycle: [yes, designated, permissive]
+# access=private/no - исключаем, если нет bicycle=yes/designated
+exclude_access: [private, "no"]
+# Проезды внутри парковок и "авто-окна" (service=...) - не улицы, исключаем
+exclude_service: [parking_aisle, drive-through]
+# Тротуар = footway=sidewalk (так отмечены тротуары в OSM).
+# Тротуары НЕ исключаем, а помечаем is_sidewalk (вариант Т3 «две оценки», 31.10.2026):
+# в сеть «по ПДД» они не входят, в сеть «с тротуарами» входят с уровнями из раздела sidewalks
+sidewalk_footway_values: [sidewalk]
+
+# Тротуары, которые в OSM не подписаны (highway=footway без тега footway=...):
+# считаем тротуаром, если линия идёт вдоль проезжей части.
+sidewalk_by_geometry:
+  enabled: true
+  road_types: [trunk, primary, secondary, tertiary, unclassified, residential, living_street,
+               trunk_link, primary_link, secondary_link, tertiary_link]
+  max_distance_m: 15     # не дальше 15 м от оси проезжей части
+  max_angle_deg: 30      # и почти параллельно ей
+  min_length_m: 8        # совсем короткие кусочки (соединители, переходы) не трогаем
+
+# ---------- Тип дороги, если в OSM у участка несколько highway ----------
+# Берём тот, что стоит раньше в списке (дороги для машин важнее дорожек)
+highway_priority: [trunk, primary, secondary, tertiary, unclassified, residential, living_street,
+                   trunk_link, primary_link, secondary_link, tertiary_link, service, track,
+                   pedestrian, cycleway, path, footway]
+# По этим типам ездят только пешеходы и велосипеды: скорость и полосы для них не нужны
+non_car_highway: [pedestrian, cycleway, path, footway]
+
+# ---------- Значения по умолчанию (если в OSM нет тега) ----------
+# Названия скоростей из тега maxspeed -> км/ч
+maxspeed_names:
+  "RU:living_street": 20
+  "RU:urban": 60
+  "RU:rural": 90
+  "walk": 5
+# Если тега нет совсем: 20 для living_street, для остальных 60 (так сказано в ПДД для города)
+maxspeed_default_living_street: 20
+maxspeed_default: 60
+
+# Число полос ВСЕГО (в обе стороны) по типу дороги.
+# unclassified и *_link в задании block1.md не было - значения предложил ассистент, автор подтвердил 31.10.2026
+# (совпадают с медианой по улицам ЦАО, где тег lanes есть; у этих типов тег есть у 89-97% длины).
+lanes_default:
+  trunk: 6
+  primary: 4
+  secondary: 4
+  tertiary: 2
+  residential: 2
+  service: 1
+  living_street: 1
+  unclassified: 2        # подтверждено 31.10
+  trunk_link: 1          # подтверждено 31.10
+  primary_link: 1        # подтверждено 31.10
+  secondary_link: 1      # подтверждено 31.10
+  tertiary_link: 1       # подтверждено 31.10
+  track: 1               # подтверждено 31.10
+lanes_default_other: 1   # для всего остального
+
+# Тихая улица (is_quiet): такой тип дороги и не больше 1 полосы в сторону.
+# unclassified сюда НЕ входит (решение автора), это открытый вопрос на шаг 5.
+quiet_highway: [residential, service, living_street]
+quiet_max_lanes_per_dir: 1
+
+# Защищённая велополоса (lane_protected): есть любой из этих тегов, и он не "no"
+lane_separation_tags: [cycleway:separation, cycleway:left:separation,
+                       cycleway:right:separation, cycleway:both:separation]
+
+# ================= Уровни LTS (для шага 3) =================
+# 1. Отдельная инфраструктура
+infra_lts:
+  separated: 1      # отделённая велодорожка (Mekuria 2012, табл. 1)
+  shared_path: 2    # пешеходные улицы, бульвары, дорожки в парках (альбом ДТ 2014, разд. 5.5.2)
+  bus_lane: 3       # автобусная полоса (велоруководство 2022, с. 116)
+
+# 1а. Тротуары (только для оценки «с тротуарами»; ширина от 2,5 м - альбом ДТ Москвы 2014, табл. 5.11)
+sidewalks:
+  sidewalk_lts: 3
+  wide_sidewalk_min_width_m: 2.5
+  wide_sidewalk_lts: 2
+# Если ширины тротуара в OSM нет: тротуар вдоль такой улицы считаем широким (width_source = default_by_road).
+# Тип улицы = ближайшая параллельная проезжая часть (как в sidewalk_by_geometry). Решение автора 31.10.2026.
+sidewalk_width_default:
+  trunk: true      # ДОПУЩЕНИЕ автора: данных с шириной у trunk в ЦАО 0 км, проверить разметкой в OSM
+  primary: true    # наши данные: 93% тротуаров с известной шириной от 2,5 м, медиана 4 м
+
+# 2. Велополоса (велоруководство 2022, табл. 10 и 13; Mekuria табл. 3)
+bike_lane:
+  lane_protected_lts: 1        # с физической защитой, до lane_protected_max_speed
+  lane_protected_max_speed: 60
+  lane_local_lts: 1            # обычная, на тихой улице или при скорости <= lane_local_max_speed и 1 полосе
+  lane_local_max_speed: 40
+  lane_arterial_lts: 2         # обычная, 50-60 км/ч или 2 полосы. УСТУПКА: по табл. 13 и Mekuria скорее 3
+  lane_fast_lts: 3             # 70+ км/ч или 3+ полос в сторону
+  lane_fast_min_speed: 70
+  lane_fast_min_lanes: 3
+
+# 3. Тихая улица без велоинфраструктуры (Mekuria, сноска a к табл. 4; альбом ДТ, разд. 5.5.1)
+quiet_lts:
+  slow_max_speed: 30     # <= 30 км/ч по тегу или living_street -> slow_lts
+  slow_lts: 1
+  default_lts: 2         # тега скорости нет
+  medium_max_speed: 50   # 40-50 км/ч по тегу -> medium_lts
+  medium_lts: 2
+  fast_lts: 3            # 60 км/ч и больше по тегу
+
+# 4. Остальные улицы без велоинфраструктуры: строка = максимальная скорость,
+#    столбцы = 1, 2, 3+ полос в одну сторону (Mekuria 2012, табл. 4, "большее значение")
+mixed_lts:
+  - {max_speed: 20,  lts: [1, 3, 4]}
+  - {max_speed: 40,  lts: [2, 3, 4]}
+  - {max_speed: 50,  lts: [3, 4, 4]}
+  - {max_speed: 999, lts: [4, 4, 4]}
