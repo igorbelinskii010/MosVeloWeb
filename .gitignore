@@ -8,3 +8,5 @@ outputs/maps/download_check.html
 data/processed/graph_raw.graphml
 # результаты скриптов (gpkg) пересоздаются запуском src/0*.py, в git не храним (решение автора 31.10.2026)
 data/processed/*.gpkg
+# карта шага 4 весит ~52 МБ, пересоздаётся запуском src/04_map_check.py
+outputs/maps/lts_check.html

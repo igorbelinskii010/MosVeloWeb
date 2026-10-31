@@ -11,6 +11,9 @@ python -m venv .venv
 .venv\Scripts\activate        # Windows
 pip install -r requirements.txt
 python src/01_download.py
+python src/02_normalize.py
+python src/03_lts.py
+python src/04_map_check.py   # карта outputs/maps/lts_check.html
 ```
 
 Скрипты в `src/` запускаются по порядку. Каждый читает результат предыдущего из
