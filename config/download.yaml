@@ -50,6 +50,13 @@ useful_tags:
   - sidewalk:left:width
   - sidewalk:right:width
   - sidewalk:both:width
+  # добавлено 02.11.2026: обязан ли велосипедист ехать по соседней велодорожке
+  - bicycle:forward
+  - bicycle:backward
+# Линии OSM, у которых различается любой из этих тегов, не склеиваем в одно ребро
+# при упрощении графа (02.11.2026). Иначе на шаге 2 всё ребро получает худший случай.
+split_on_tags: [highway, lanes, maxspeed, oneway, cycleway, cycleway:left, cycleway:right,
+                cycleway:both, bicycle, footway, access, service]
 # Точки притяжения: категория -> теги OSM (подходит любой из них)
 poi:
   metro_mcd:
