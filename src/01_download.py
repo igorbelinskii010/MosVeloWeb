@@ -7,13 +7,17 @@
   poi.gpkg           - точки притяжения с колонкой category
 Скачанное кэшируется в data/raw/, поэтому повторный запуск не качает всё заново.
 """
+import json
 from pathlib import Path
 
 import folium
 import geopandas as gpd
+import networkx as nx
 import osmnx as ox
 import pandas as pd
 import yaml
+from osmnx import projection, truncate
+from osmnx.graph import _create_graph
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "data" / "raw"
@@ -63,7 +67,12 @@ def download_graph(polygon):
         print("Граф уже скачан, читаю из data/raw/")
         return ox.load_graphml(raw_file)
     print("Качаю граф улиц (может занять несколько минут; если ответ сервера уже в кэше - быстро)...")
-    graph = ox.graph_from_polygon(polygon, custom_filter=custom_filter, simplify=False, retain_all=True)
+    try:
+        graph = ox.graph_from_polygon(polygon, custom_filter=custom_filter, simplify=False, retain_all=True)
+    except Exception as err:  # сервер Overpass не ответил (502, 504, обрыв, таймаут)
+        print(f"\nСервер Overpass не ответил: {err}")
+        print("Собираю граф из прошлой загрузки, которая лежит в кэше data/raw/osmnx_cache/")
+        graph = graph_from_cache(polygon)
     # Упрощаем граф: соседние линии OSM между перекрёстками склеиваются в одно ребро.
     # Но линии с разными важными тегами НЕ склеиваем (список split_on_tags в конфиге),
     # иначе на шаге 2 всё ребро получает худший случай: пешеходная часть улицы становится
@@ -71,6 +80,38 @@ def download_graph(polygon):
     print("Упрощаю граф, не склеивая линии с разными тегами (1-3 минуты)...", flush=True)
     graph = ox.simplify_graph(graph, edge_attrs_differ=cfg["split_on_tags"])
     ox.save_graphml(graph, raw_file)
+    return graph
+
+
+def graph_from_cache(polygon):
+    """Запасной путь, если сервер Overpass не отвечает (добавлено 02.11.2026).
+
+    Берём из кэша самый большой ответ сервера с улицами (это прошлая загрузка графа)
+    и собираем граф теми же шагами, что и OSMnx в graph_from_polygon: запас 500 м,
+    обрезка по запасу, потом обрезка по нашему полигону. Данные будут на дату той загрузки.
+    """
+    best, best_ways = None, 0
+    for file in (RAW / "osmnx_cache").glob("*.json"):
+        with open(file, encoding="utf-8") as f:
+            response = json.load(f)
+        if not isinstance(response, dict) or "elements" not in response:
+            continue
+        ways = sum(1 for el in response["elements"] if el["type"] == "way" and "highway" in el.get("tags", {}))
+        if ways > best_ways:
+            best, best_ways = response, ways
+    if best is None:
+        raise SystemExit("В кэше нет прошлой загрузки улиц. Поменяй overpass_url в config/download.yaml "
+                         "на другой сервер из списка и запусти ещё раз.")
+    date = best.get("osm3s", {}).get("timestamp_osm_base", "неизвестно")
+    print(f"Нашёл в кэше {best_ways} линий улиц, данные OSM на дату {date}")
+    # Те же шаги, что внутри ox.graph_from_polygon (OSMnx 2.1.1)
+    poly_proj, crs_utm = projection.project_geometry(polygon)
+    poly_buff, _ = projection.project_geometry(poly_proj.buffer(500), crs=crs_utm, to_latlong=True)
+    graph_buff = _create_graph([best], bidirectional=False)
+    graph_buff = truncate.truncate_graph_polygon(graph_buff, poly_buff, truncate_by_edge=False)
+    graph = truncate.truncate_graph_polygon(graph_buff, polygon, truncate_by_edge=False)
+    street_count = ox.stats.count_streets_per_node(graph_buff, nodes=graph.nodes)
+    nx.set_node_attributes(graph, values=street_count, name="street_count")
     return graph
 
 
