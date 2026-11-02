@@ -231,9 +231,13 @@ def normalize(edges, cao):
         is_car_road = highway not in RULES["non_car_highway"]
 
         # --- скорость ---
-        speed_values = [s for s in (parse_speed(t) for t in as_list(row.get("maxspeed"))) if s is not None]
+        speed_raw = [t.strip() for t in as_list(row.get("maxspeed"))]
+        speed_values = [s for s in (parse_speed(t) for t in speed_raw) if s is not None]
         if not is_car_road:
             speed, speed_src = np.nan, "n/a"          # для пешеходных и велодорожек скорость не нужна
+        elif speed_values and all(t in RULES["maxspeed_as_default"] for t in speed_raw):
+            # RU:urban = «знака нет, действует общее правило ПДД» - то же, что тега нет (v0.3)
+            speed, speed_src = max(speed_values), "default"
         elif speed_values:
             speed, speed_src = max(speed_values), "tag"   # худший случай
         else:
@@ -252,8 +256,19 @@ def normalize(edges, cao):
                 if oneway:
                     lanes_total = max(lanes_total // 2, 1)   # у односторонней дороги по умолчанию вдвое меньше
                 lanes_src = "default"
+            # Парковка, посчитанная как полоса (v0.3): на односторонней небольшой улице lanes=2
+            # обычно значит 1 полосу для езды + парковку. Помечаем как допущение.
+            park = RULES["parking_in_lanes"]
+            if (park["enabled"] and oneway and lanes_src == "tag" and highway in park["highway"]
+                    and lanes_total == park["oneway_lanes_tag"]):
+                lanes_total, lanes_src = park["assume_lanes"], "parking_assumed"
             # lanes в OSM - это полосы в обе стороны. У односторонних - в одну.
             lanes_dir = lanes_total if oneway else lanes_total / 2
+
+        # Обязан ли велосипедист по ПДД ехать по велодорожке рядом (v0.3):
+        # bicycle=use_sidepath или cycleway*=separate («велодорожка нарисована отдельной линией»)
+        sidepath_tags = bicycle + as_list(row.get("bicycle:forward")) + as_list(row.get("bicycle:backward"))
+        use_sidepath = is_car_road and ("use_sidepath" in sidepath_tags or "separate" in cycleway_values(row))
 
         infra = get_bike_infra(row, highway)
         bike_ok = any(v in RULES["allow_bicycle"] for v in bicycle)
@@ -275,7 +290,7 @@ def normalize(edges, cao):
             "maxspeed_kmh": speed, "maxspeed_source": speed_src,
             "lanes_total": lanes_total, "lanes_source": lanes_src, "lanes_per_dir": lanes_dir,
             "oneway": oneway, "bike_both_ways": both_ways, "bike_infra": infra,
-            "is_quiet": is_quiet, "lane_protected": lane_protected,
+            "is_quiet": is_quiet, "lane_protected": lane_protected, "use_sidepath": use_sidepath,
             # Тротуар по тегу footway=sidewalk (если велосипедам не разрешено явно)
             "is_sidewalk": is_sidewalk, "sidewalk_source": "tag" if is_sidewalk else None,
             # ширина самой линии (у тротуара - ширина тротуара)
@@ -365,13 +380,17 @@ def make_summary(all_edges, kept):
         tag, default = by_src.get("tag", 0), by_src.get("default", 0)
         add(f"  {label}: из тега {tag:.0f} км ({share_text(tag, km(streets))}), "
             f"по умолчанию {default:.0f} км ({share_text(default, km(streets))})")
+    parked = by_src.get("parking_assumed", 0)
+    add(f"  полосы: допущение «lanes=2 на односторонней = 1 полоса + парковка»: {parked:.0f} км")
+    sidepath = in_kept[in_kept["use_sidepath"]]
+    add(f"  проезжие части с велодорожкой рядом (use_sidepath / cycleway=separate): {km(sidepath):.0f} км")
     default_share = streets.loc[streets["maxspeed_source"] == "default", "length_m"].sum() / streets["length_m"].sum()
     if default_share > 0.5:
         add("  ВНИМАНИЕ: больше 50% скоростей по умолчанию - записать как ограничение, кандидат для ML в блоке 4")
 
     # Тихие улицы (is_quiet): сколько их и сколько из них без тега скорости
     quiet = streets[streets["is_quiet"]]
-    add(f"\nТихие улицы (residential/service/living_street, до 1 полосы в сторону): {km(quiet):.0f} км "
+    add(f"\nТихие улицы ({'/'.join(RULES['quiet_highway'])}, до 1 полосы в сторону): {km(quiet):.0f} км "
         f"({share_text(km(quiet), km(streets))} улиц со смешанным движением)")
     for name, part in quiet.groupby("highway"):
         no_tag = part.loc[part["maxspeed_source"] == "default", "length_m"].sum() / 1000

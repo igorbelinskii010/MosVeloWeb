@@ -4,7 +4,8 @@
            (раздел «Уровни LTS», метод v0.2).
 Что сохраняет в data/processed/:
   edges_lts.gpkg - те же участки + две оценки:
-      lts, lts_reason                   - сеть «по ПДД» (у тротуаров пусто: по ПДД там ехать нельзя)
+      lts, lts_reason                   - сеть «по ПДД» (у тротуаров пусто: по ПДД там ехать нельзя;
+                                          у проезжих частей с велодорожкой рядом тоже пусто, v0.3)
       lts_sidewalk, lts_sidewalk_reason - сеть «с тротуарами» (то же + тротуары)
   nodes.gpkg     - узлы сети (перекрёстки и концы участков) с числом примыкающих участков
 Сводку «км по уровням LTS» печатает в консоль и пишет в outputs/lts_summary.txt.
@@ -42,8 +43,8 @@ def speed_text(row):
 
 
 def lanes_text(row, lanes):
-    mark = " (по умолч.)" if row["lanes_source"] == "default" else ""
-    return f"{lanes} пол./сторону{mark}"
+    marks = {"default": " (по умолч.)", "parking_assumed": " (lanes=2, допущ.: 2-я - парковка)"}
+    return f"{lanes} пол./сторону{marks.get(row['lanes_source'], '')}"
 
 
 def lanes_one_way(row):
@@ -149,6 +150,11 @@ def add_lts(edges):
             road.append(None)
             road_reason.append("тротуар, по ПДД нельзя")
             level, reason = lts_sidewalk(row)
+        elif row["use_sidepath"] and RULES["use_sidepath_not_in_road_network"]:
+            # рядом отдельная велодорожка, по ПДД ехать надо по ней (v0.3)
+            level, reason = street_lts(row)
+            road.append(None)
+            road_reason.append("по ПДД - по велодорожке рядом (use_sidepath)")
         else:
             level, reason = street_lts(row)
             road.append(level)
@@ -215,10 +221,17 @@ def make_summary(edges):
 
     # Сколько километров каждого уровня держится на скорости «по умолчанию»
     streets = road[road["bike_infra"].isin(["none", "lane"])]
-    add("\nУлицы с машинами: доля длины со скоростью по умолчанию (без тега maxspeed):")
+    add("\nУлицы с машинами: доля длины со скоростью по умолчанию (нет тега или RU:urban)"
+        " и с допущением о парковке:")
     for level, part in streets.groupby("lts"):
-        share = 100 * part.loc[part["maxspeed_source"] == "default", "length_m"].sum() / part["length_m"].sum()
-        add(f"  LTS {int(level)}: {part['length_m'].sum() / 1000:.0f} км, из них по умолчанию {share:.0f}%")
+        total = part["length_m"].sum()
+        share = 100 * part.loc[part["maxspeed_source"] == "default", "length_m"].sum() / total
+        parked = 100 * part.loc[part["lanes_source"] == "parking_assumed", "length_m"].sum() / total
+        add(f"  LTS {int(level)}: {total / 1000:.0f} км, скорость по умолчанию {share:.0f}%, "
+            f"парковка вместо полосы {parked:.0f}%")
+
+    sidepath = in_cao[in_cao["use_sidepath"] & ~in_cao["is_sidewalk"]]
+    add(f"\nПроезжие части с велодорожкой рядом (не в сети «по ПДД»): {sidepath['length_m'].sum() / 1000:.0f} км")
 
     walks = in_cao[in_cao["is_sidewalk"]]
     add("\nТротуары (только сеть «с тротуарами»):")
@@ -236,7 +249,7 @@ def main():
     print("Читаю edges_norm.gpkg...", flush=True)
     edges = gpd.read_file(PROCESSED / "edges_norm.gpkg")
     # В GeoPackage да/нет иногда читается как 0/1 - возвращаем тип «да/нет»
-    for column in ("is_sidewalk", "is_quiet", "lane_protected", "in_cao"):
+    for column in ("is_sidewalk", "is_quiet", "lane_protected", "use_sidepath", "in_cao"):
         edges[column] = edges[column].fillna(False).astype(bool)
     print(f"Участков: {len(edges)}. Считаю LTS (около минуты)...", flush=True)
     edges = add_lts(edges)

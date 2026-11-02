@@ -82,6 +82,8 @@ def kind_text(row):
         road += " с велополосой"
     if infra == "bus_lane":
         road += " с автобусной полосой"
+    if row["use_sidepath"]:
+        road += ", рядом велодорожка"
     return road
 
 
@@ -128,7 +130,9 @@ def prepare_edges(edges):
 
     # Пунктир: у улицы с машинами скорость или полосы взяты по умолчанию
     is_street = edges["bike_infra"].isin(CFG["dashed_for_infra"])
-    has_default = (edges["maxspeed_source"] == "default") | (edges["lanes_source"] == "default")
+    # (допущение о парковке вместо второй полосы - тоже допущение, тоже пунктир)
+    has_default = ((edges["maxspeed_source"] == "default")
+                   | edges["lanes_source"].isin(["default", "parking_assumed"]))
     edges["dashed"] = is_street & has_default
 
     # Тексты для окна. Короткие латинские названия колонок и короткие значения - чтобы файл
@@ -163,6 +167,11 @@ ROAD_FIELDS = {
     "name_": "Название", "kind": "Что это", "highway": "Тип (highway)", "speed": "Скорость",
     "lanes": "Полос всего", "bike_infra": "Велоинфраструктура",
     "lts": "LTS по ПДД", "lts_reason": "Причина", "osm": OSM_ALIAS,
+}
+SIDEPATH_FIELDS = {
+    "name_": "Название", "kind": "Что это", "highway": "Тип (highway)", "speed": "Скорость",
+    "lanes": "Полос всего", "lts_reason": "По ПДД", "lts_sidewalk": "LTS, если ехать по проезжей",
+    "lts_sidewalk_reason": "Причина", "osm": OSM_ALIAS,
 }
 SIDEWALK_FIELDS = {
     "name_": "Название", "kind": "Что это", "bike_infra": "Велоинфраструктура", "width": "Ширина тротуара",
@@ -230,8 +239,9 @@ class ClickTolerance(folium.MacroElement):
         self.tolerance = tolerance
 
 
-def add_lines(fmap, part, name, lts_column, fields, show):
-    """Слой линий: цвет по уровню LTS, пунктир для оценок по умолчанию, окно по клику."""
+def add_lines(fmap, part, name, lts_column, fields, show, color=None):
+    """Слой линий: цвет по уровню LTS (или один цвет color), пунктир для оценок по умолчанию,
+    окно по клику."""
     if part.empty:
         return
     colors = CFG["lts_colors"]
@@ -241,7 +251,7 @@ def add_lines(fmap, part, name, lts_column, fields, show):
         # Проезжие части толще, дорожки и тротуары тоньше: так видно, что это разные линии
         weight = CFG["line_weight_road"] if props["is_road"] else CFG["line_weight_path"]
         return {
-            "color": colors[int(props[lts_column])],
+            "color": color or colors[int(props[lts_column])],
             "weight": weight,
             "opacity": 0.9,
             "dashArray": CFG["dash_pattern"] if props["dashed"] else None,
@@ -301,6 +311,8 @@ def add_legend(fmap):
            vertical-align:middle"></span> скорость/полосы по умолч.</div>
       <div><span style="display:inline-block;width:24px;height:4px;background:#555;
            vertical-align:middle"></span> проезжая часть</div>
+      <div><span style="display:inline-block;width:24px;height:4px;background:{CFG['sidepath_color']};
+           vertical-align:middle"></span> проезжая, по ПДД - велодорожка рядом</div>
       <div><span style="display:inline-block;width:24px;height:2px;background:#555;
            vertical-align:middle"></span> дорожка, тротуар</div>
       <div style="margin-top:4px;color:#555">© участники OpenStreetMap</div>
@@ -311,7 +323,7 @@ def add_legend(fmap):
 def main():
     print("Читаю edges_lts.gpkg...", flush=True)
     edges = gpd.read_file(PROCESSED / "edges_lts.gpkg")
-    for column in ("is_sidewalk", "in_cao"):
+    for column in ("is_sidewalk", "use_sidepath", "in_cao"):
         edges[column] = edges[column].fillna(False).astype(bool)
     edges = prepare_edges(edges)
     poi = gpd.read_file(PROCESSED / "poi.gpkg").to_crs(4326)
@@ -333,6 +345,11 @@ def main():
         part = road[road["lts"] == level]
         km = part["length_m"].sum() / 1000
         add_lines(fmap, part, f"По ПДД: LTS {level} ({km:.0f} км)", "lts", ROAD_FIELDS, show=True)
+    # Проезжие части, где по ПДД надо ехать по велодорожке рядом: в сеть «по ПДД» не входят (v0.3)
+    sidepath = road[road["lts"].isna()]
+    km = sidepath["length_m"].sum() / 1000
+    add_lines(fmap, sidepath, f"Проезжая часть, по ПДД - велодорожка рядом ({km:.0f} км)",
+              "lts_sidewalk", SIDEPATH_FIELDS, show=True, color=CFG["sidepath_color"])
     walks = edges[edges["is_sidewalk"]]
     for level in sorted(walks["lts_sidewalk"].unique()):
         part = walks[walks["lts_sidewalk"] == level]

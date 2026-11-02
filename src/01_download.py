@@ -62,8 +62,14 @@ def download_graph(polygon):
     if raw_file.exists():
         print("Граф уже скачан, читаю из data/raw/")
         return ox.load_graphml(raw_file)
-    print("Качаю граф улиц (может занять несколько минут)...")
-    graph = ox.graph_from_polygon(polygon, custom_filter=custom_filter, simplify=True, retain_all=True)
+    print("Качаю граф улиц (может занять несколько минут; если ответ сервера уже в кэше - быстро)...")
+    graph = ox.graph_from_polygon(polygon, custom_filter=custom_filter, simplify=False, retain_all=True)
+    # Упрощаем граф: соседние линии OSM между перекрёстками склеиваются в одно ребро.
+    # Но линии с разными важными тегами НЕ склеиваем (список split_on_tags в конфиге),
+    # иначе на шаге 2 всё ребро получает худший случай: пешеходная часть улицы становится
+    # проезжей, сужение до 1 полосы пропадает (найдено 02.11.2026 на Копьёвском и Костомаровском).
+    print("Упрощаю граф, не склеивая линии с разными тегами (1-3 минуты)...", flush=True)
+    graph = ox.simplify_graph(graph, edge_attrs_differ=cfg["split_on_tags"])
     ox.save_graphml(graph, raw_file)
     return graph
 
