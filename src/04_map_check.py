@@ -13,7 +13,12 @@
   - пунктир = скорость или полосы взяты по умолчанию, оценка держится на допущении;
   - стыки спокойной сети с LTS 4 - для проверки правила барьера, по умолчанию выключены;
   - точки притяжения.
-Клик по участку - окно с данными и причиной оценки, ссылка на линию в OSM.
+Клик по участку - окно с данными и причиной оценки, номер линии в OSM.
+
+Важно: у одной улицы в OSM бывает несколько линий - проезжая часть (у широких улиц отдельно
+на каждое направление), тротуары, велодорожка, аллея бульвара. Это не дубли, а разные объекты,
+и у каждого свой уровень. Поэтому в окне есть «Что это», у дорожек без названия - «вдоль: <улица>»,
+а проезжие части нарисованы толще дорожек.
 
 Рисуем только участки внутри ЦАО (in_cao), как и цифры в работе: так карта легче.
 """
@@ -25,6 +30,7 @@ import numpy as np
 import pandas as pd
 import shapely
 import yaml
+from jinja2 import Template
 
 # Русские буквы в файле карты пишем как есть, а не кодами \uXXXX - иначе файл в 2-3 раза тяжелее
 folium.GeoJson._template.environment.policies["json.dumps_kwargs"] = {"ensure_ascii": False, "sort_keys": True}
@@ -53,6 +59,69 @@ def value_with_source(value, source, unit):
     return f"{value:g} {unit}{mark}"
 
 
+CAR_INFRA = ["none", "lane", "bus_lane"]   # по этим участкам едут машины
+
+
+def kind_text(row):
+    """Что это за линия, человеческими словами.
+
+    В OSM у одной улицы бывает несколько линий: проезжая часть (у широких улиц - отдельно
+    на каждое направление), тротуары, велодорожка, аллея. Каждая получает свой уровень LTS.
+    """
+    infra = row["bike_infra"]
+    if row["is_sidewalk"]:
+        return "тротуар"
+    if infra == "separated":
+        return "велодорожка" if row["highway"] == "cycleway" else "дорожка для велосипедов"
+    if infra == "shared_path":
+        return "пешеходная улица" if row["highway"] == "pedestrian" else "пешеходная дорожка, аллея"
+    road = "проезжая часть"
+    if row["oneway"]:
+        road += " (одно направление)"
+    if infra == "lane":
+        road += " с велополосой"
+    if infra == "bus_lane":
+        road += " с автобусной полосой"
+    return road
+
+
+def direction(line, start, end):
+    """Вектор направления линии между точками на расстоянии start и end метров от её начала."""
+    a = line.interpolate(start)
+    b = line.interpolate(end)
+    return np.array([b.x - a.x, b.y - a.y])
+
+
+def along_road_names(edges):
+    """Для линий без названия (дорожки, тротуары) ищем улицу, вдоль которой они идут.
+
+    Берём ближайшую проезжую часть с названием не дальше along_max_distance_m от середины линии
+    и проверяем, что линия почти параллельна ей (угол не больше along_max_angle_deg).
+    Возвращает текст 'вдоль: <улица>' или пустую строку.
+    """
+    roads = edges[edges["bike_infra"].isin(CAR_INFRA) & edges["name"].notna()]
+    lines = edges[edges["name"].isna() & ~edges["bike_infra"].isin(CAR_INFRA)]
+    middles = gpd.GeoDataFrame(geometry=lines.geometry.interpolate(0.5, normalized=True), crs=edges.crs)
+    pairs = gpd.sjoin_nearest(middles, roads[["name", "geometry"]], how="inner",
+                              max_distance=CFG["along_max_distance_m"])
+    pairs = pairs[~pairs.index.duplicated()]   # если две улицы на одном расстоянии - берём первую
+
+    result = pd.Series("", index=edges.index)
+    max_cos = np.cos(np.radians(CFG["along_max_angle_deg"]))
+    for idx, road_idx, road_name in zip(pairs.index, pairs["index_right"], pairs["name"]):
+        line = edges.geometry[idx]
+        road = edges.geometry[road_idx]
+        if line.length < 1:
+            continue
+        line_dir = direction(line, 0, line.length)
+        at = road.project(middles.geometry[idx])
+        road_dir = direction(road, max(at - 5, 0), min(at + 5, road.length))
+        lengths = np.linalg.norm(line_dir) * np.linalg.norm(road_dir)
+        if lengths > 0 and abs(line_dir @ road_dir) / lengths >= max_cos:
+            result[idx] = f"вдоль: {road_name}"
+    return result
+
+
 def prepare_edges(edges):
     """Оставляем участки внутри ЦАО и готовим короткие колонки для всплывающих окон."""
     edges = edges[edges["in_cao"]].copy()
@@ -64,7 +133,10 @@ def prepare_edges(edges):
 
     # Тексты для окна. Короткие латинские названия колонок и короткие значения - чтобы файл
     # карты был легче (участков 111 тысяч), русские подписи к ним - в ROAD_FIELDS ниже.
-    edges["name_"] = edges["name"].fillna("")
+    edges["kind"] = [kind_text(row) for _, row in edges.iterrows()]
+    # У дорожек и тротуаров названия обычно нет - подписываем, вдоль какой улицы они идут
+    edges["name_"] = edges["name"].fillna(along_road_names(edges))
+    edges["is_road"] = edges["bike_infra"].isin(CAR_INFRA) & ~edges["is_sidewalk"]
     edges["speed"] = [value_with_source(v, s, "км/ч")
                       for v, s in zip(edges["maxspeed_kmh"], edges["maxspeed_source"])]
     edges["lanes"] = [value_with_source(v, s, "")
@@ -88,12 +160,12 @@ OSM_ALIAS = "Линия OSM"
 
 # Что показываем во всплывающем окне: колонка -> подпись (порядок как в задании шага 4)
 ROAD_FIELDS = {
-    "name_": "Название", "highway": "Тип (highway)", "speed": "Скорость",
+    "name_": "Название", "kind": "Что это", "highway": "Тип (highway)", "speed": "Скорость",
     "lanes": "Полос всего", "bike_infra": "Велоинфраструктура",
     "lts": "LTS по ПДД", "lts_reason": "Причина", "osm": OSM_ALIAS,
 }
 SIDEWALK_FIELDS = {
-    "name_": "Название", "bike_infra": "Велоинфраструктура", "width": "Ширина тротуара",
+    "name_": "Название", "kind": "Что это", "bike_infra": "Велоинфраструктура", "width": "Ширина тротуара",
     "lts_sidewalk": "LTS с тротуарами", "lts_sidewalk_reason": "Причина", "osm": OSM_ALIAS,
 }
 
@@ -143,6 +215,21 @@ def find_junctions(edges):
 
 # ---------- Слои карты ----------
 
+class ClickTolerance(folium.MacroElement):
+    """Тонкую линию трудно попасть мышкой. Эта вставка говорит Leaflet считать попаданием
+    клик в пределах click_tolerance_px пикселей от линии. Добавлять сразу после создания карты,
+    до слоёв с линиями."""
+    _template = Template("""
+        {% macro script(this, kwargs) %}
+        {{ this._parent.get_name() }}.options.renderer = L.canvas({tolerance: {{ this.tolerance }}});
+        {% endmacro %}
+    """)
+
+    def __init__(self, tolerance):
+        super().__init__()
+        self.tolerance = tolerance
+
+
 def add_lines(fmap, part, name, lts_column, fields, show):
     """Слой линий: цвет по уровню LTS, пунктир для оценок по умолчанию, окно по клику."""
     if part.empty:
@@ -151,21 +238,23 @@ def add_lines(fmap, part, name, lts_column, fields, show):
 
     def style(feature):
         props = feature["properties"]
+        # Проезжие части толще, дорожки и тротуары тоньше: так видно, что это разные линии
+        weight = CFG["line_weight_road"] if props["is_road"] else CFG["line_weight_path"]
         return {
             "color": colors[int(props[lts_column])],
-            "weight": CFG["line_weight"],
+            "weight": weight,
             "opacity": 0.9,
             "dashArray": CFG["dash_pattern"] if props["dashed"] else None,
         }
 
-    columns = list(dict.fromkeys(list(fields) + [lts_column, "dashed", "geometry"]))
+    columns = list(dict.fromkeys(list(fields) + [lts_column, "dashed", "is_road", "geometry"]))
     folium.GeoJson(
         part[columns],
         name=name,
         show=show,
         style_function=style,
-        highlight_function=lambda feature: {"weight": CFG["line_weight"] + 4},
-        tooltip=folium.GeoJsonTooltip(fields=["name_", lts_column], aliases=["", "LTS"]),
+        highlight_function=lambda feature: {"weight": CFG["line_weight_road"] + 4},
+        tooltip=folium.GeoJsonTooltip(fields=["kind", "name_", lts_column], aliases=["", "", "LTS"]),
         popup=folium.GeoJsonPopup(fields=list(fields), aliases=list(fields.values()),
                                   style="min-width:320px"),
     ).add_to(fmap)
@@ -210,6 +299,10 @@ def add_legend(fmap):
       <b>Уровень стресса</b>{lines}
       <div><span style="display:inline-block;width:24px;border-top:3px dashed #555;
            vertical-align:middle"></span> скорость/полосы по умолч.</div>
+      <div><span style="display:inline-block;width:24px;height:4px;background:#555;
+           vertical-align:middle"></span> проезжая часть</div>
+      <div><span style="display:inline-block;width:24px;height:2px;background:#555;
+           vertical-align:middle"></span> дорожка, тротуар</div>
       <div style="margin-top:4px;color:#555">© участники OpenStreetMap</div>
     </div>"""
     fmap.get_root().html.add_child(folium.Element(html))
@@ -227,6 +320,7 @@ def main():
     center = cao.geometry.iloc[0].centroid
     fmap = folium.Map(location=[center.y, center.x], zoom_start=CFG["zoom"], tiles=None,
                       prefer_canvas=True)
+    ClickTolerance(CFG["click_tolerance_px"]).add_to(fmap)
     # Подложка OSM полупрозрачная, чтобы цветные линии было лучше видно
     folium.TileLayer("OpenStreetMap", name="Подложка OpenStreetMap",
                      opacity=CFG["tiles_opacity"]).add_to(fmap)

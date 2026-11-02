@@ -46,6 +46,11 @@ def as_list(value):
     return [str(value)]
 
 
+def sorted_ids(osmid):
+    """Номер линии OSM или список номеров -> текст с номерами по возрастанию: [2, 1] -> '1,2'."""
+    return ",".join(sorted(as_list(osmid), key=int))
+
+
 def parse_speed(text):
     """Одно значение maxspeed -> км/ч. Если не поняли - None."""
     text = text.strip()
@@ -203,7 +208,9 @@ def load_edges():
     # Двустороннюю улицу OSMnx записывает двумя рёбрами (u->v и v->u). Оставляем одно.
     edges["a"] = edges[["u", "v"]].min(axis=1)
     edges["b"] = edges[["u", "v"]].max(axis=1)
-    edges["osm_text"] = edges["osmid"].astype(str)
+    # Номера линий OSM как отсортированный текст: после упрощения графа у ребра бывает список,
+    # и у копии "обратно" он идёт в обратном порядке ([1, 2] и [2, 1]) - это одна и та же линия
+    edges["osm_text"] = edges["osmid"].map(sorted_ids)
     edges["len_round"] = edges.geometry.length.round(1)
     edges["is_forward"] = edges["reversed"].astype(str).eq("False")
     edges = edges.sort_values("is_forward", ascending=False)  # сначала "прямые" копии
