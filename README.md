@@ -129,6 +129,8 @@ python src/04_map_check.py    # карта outputs/maps/lts_check.html
 MosVeloWeb/
 ├── README.md
 ├── requirements.txt          версии библиотек
+├── claude/                   контекст для ИИ-ассистентов: CLAUDE.md, задания блоков,
+│                             журнал решений (decisions.md), заметки (notes.md)
 ├── config/
 │   ├── download.yaml         сервер Overpass, теги OSM, точки притяжения
 │   ├── lts_rules.yaml        правила оценки LTS и значения по умолчанию
