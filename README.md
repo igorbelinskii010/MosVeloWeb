@@ -9,7 +9,7 @@
 
 | Кто | Часть работы |
 |---|---|
-| Игорь Белинский ([@igorbelinskii010](https://github.com/igorbelinskii010)) | Блок 1: оценка улиц по LTS (`src/01`–`04`, `config/lts_rules.yaml`), карта оценок, бэктест |
+| Игорь ([@igorbelinskii010](https://github.com/igorbelinskii010)) | Блок 1: оценка улиц по LTS (`src/01`–`04`, `config/lts_rules.yaml`), карта оценок, бэктест |
 | _имя одноклассника_ | Блок 2: точки притяжения, «острова» и рейтинг разрывов (`src/05`–`07`, `config/priority.yaml`), карта приоритетов, сравнение с ДТП |
 
 ## Что сейчас готово
